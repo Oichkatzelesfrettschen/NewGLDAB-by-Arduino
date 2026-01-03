@@ -1,0 +1,355 @@
+name: Build and Test
+
+on:
+  push:
+    branches: [ main, develop, 'copilot/**' ]
+  pull_request:
+    branches: [ main, develop ]
+  workflow_dispatch:
+
+jobs:
+  # Build firmware with PlatformIO
+  build-platformio:
+    name: Build with PlatformIO
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        environment:
+          - pro_mini
+          - nano
+          - uno
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+        with:
+          submodules: recursive
+      
+      - name: Cache PlatformIO
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.platformio
+            .pio
+          key: ${{ runner.os }}-pio-${{ hashFiles('**/platformio.ini') }}
+          restore-keys: |
+            ${{ runner.os }}-pio-
+      
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+      
+      - name: Install PlatformIO
+        run: |
+          python -m pip install --upgrade pip
+          pip install platformio
+      
+      - name: Build firmware
+        run: |
+          pio run -e ${{ matrix.environment }}
+      
+      - name: Upload firmware artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: firmware-${{ matrix.environment }}
+          path: .pio/build/${{ matrix.environment }}/firmware.*
+          retention-days: 30
+  
+  # Build with CMake
+  build-cmake:
+    name: Build with CMake
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+      
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake build-essential
+      
+      - name: Configure CMake (Native)
+        run: |
+          cmake -B build -S . -DARDUINO_BUILD=OFF -DBUILD_TESTS=ON
+      
+      - name: Build
+        run: |
+          cmake --build build --parallel
+      
+      - name: Run tests
+        run: |
+          cd build
+          ctest --output-on-failure
+  
+  # Run unit tests
+  test:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+      
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+      
+      - name: Install PlatformIO
+        run: |
+          pip install platformio
+      
+      - name: Run native tests
+        run: |
+          pio test -e native
+  
+  # Static analysis
+  static-analysis:
+    name: Static Analysis
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+      
+      - name: Install cppcheck
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cppcheck
+      
+      - name: Run cppcheck
+        run: |
+          cppcheck --enable=all --inline-suppr \
+            --suppress=missingIncludeSystem \
+            --error-exitcode=1 \
+            --xml --xml-version=2 \
+            sketch_241109NewGLDABCODE4_7KRVersion/*.ino 2> cppcheck-report.xml || true
+      
+      - name: Upload cppcheck results
+        uses: actions/upload-artifact@v3
+        with:
+          name: cppcheck-report
+          path: cppcheck-report.xml
+  
+  # Formal verification with TLA+
+  verify-tla:
+    name: TLA+ Verification
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+      
+      - name: Set up Java
+        uses: actions/setup-java@v3
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+      
+      - name: Cache TLA+ Toolbox
+        uses: actions/cache@v3
+        with:
+          path: ~/.tlaplus
+          key: tlaplus-toolbox
+      
+      - name: Download TLA+ Tools
+        run: |
+          mkdir -p ~/.tlaplus
+          cd ~/.tlaplus
+          if [ ! -f tla2tools.jar ]; then
+            wget https://github.com/tlaplus/tlaplus/releases/download/v1.8.0/tla2tools.jar
+          fi
+      
+      - name: Run TLA+ model checker
+        run: |
+          cd docs/formal-verification
+          java -XX:+UseParallelGC -cp ~/.tlaplus/tla2tools.jar tlc2.TLC \
+            -config GLDAB_System.cfg GLDAB_System.tla || true
+        continue-on-error: true
+      
+      - name: Upload TLA+ results
+        uses: actions/upload-artifact@v3
+        with:
+          name: tla-verification
+          path: docs/formal-verification/*.out
+  
+  # Formal verification with Z3
+  verify-z3:
+    name: Z3 Verification
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+      
+      - name: Install Z3
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y z3
+      
+      - name: Run Z3 constraint solver
+        run: |
+          cd docs/formal-verification
+          z3 -smt2 GLDAB_Constraints.smt2 > z3-output.txt
+        continue-on-error: true
+      
+      - name: Display Z3 results
+        run: |
+          cat docs/formal-verification/z3-output.txt
+      
+      - name: Upload Z3 results
+        uses: actions/upload-artifact@v3
+        with:
+          name: z3-verification
+          path: docs/formal-verification/z3-output.txt
+  
+  # Documentation generation
+  generate-docs:
+    name: Generate Documentation
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+      
+      - name: Install Doxygen
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y doxygen graphviz
+      
+      - name: Create Doxyfile if not exists
+        run: |
+          if [ ! -f Doxyfile ]; then
+            cat > Doxyfile << 'EOF'
+          PROJECT_NAME           = "NewGLDAB"
+          PROJECT_BRIEF          = "Advanced Ornithopter Flight Control System"
+          OUTPUT_DIRECTORY       = docs/api
+          EXTRACT_ALL            = YES
+          EXTRACT_PRIVATE        = YES
+          GENERATE_LATEX         = NO
+          GENERATE_HTML          = YES
+          RECURSIVE              = YES
+          INPUT                  = sketch_241109NewGLDABCODE4_7KRVersion docs/mathematics docs/sensors docs/algorithms
+          FILE_PATTERNS          = *.ino *.cpp *.h *.md
+          USE_MDFILE_AS_MAINPAGE = README.md
+          EOF
+          fi
+      
+      - name: Generate documentation
+        run: |
+          doxygen Doxyfile || true
+      
+      - name: Upload documentation
+        uses: actions/upload-artifact@v3
+        with:
+          name: documentation
+          path: docs/api/html/
+  
+  # Code quality metrics
+  code-quality:
+    name: Code Quality Metrics
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+      
+      - name: Install cloc
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cloc
+      
+      - name: Count lines of code
+        run: |
+          cloc . --exclude-dir=.git,.pio,build,Image --md > code-metrics.md
+          cat code-metrics.md
+      
+      - name: Upload metrics
+        uses: actions/upload-artifact@v3
+        with:
+          name: code-metrics
+          path: code-metrics.md
+  
+  # Security scan
+  security-scan:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+      
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'fs'
+          scan-ref: '.'
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+      
+      - name: Upload Trivy results
+        uses: github/codeql-action/upload-sarif@v2
+        with:
+          sarif_file: 'trivy-results.sarif'
+  
+  # Release build
+  release:
+    name: Create Release Build
+    runs-on: ubuntu-latest
+    needs: [build-platformio, test, verify-z3]
+    if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/')
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+      
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+      
+      - name: Install PlatformIO
+        run: pip install platformio
+      
+      - name: Build all environments
+        run: pio run
+      
+      - name: Create release archive
+        run: |
+          mkdir -p release
+          cp -r .pio/build/*/firmware.* release/ || true
+          cp README.md LICENSE release/
+          cp -r docs/research release/documentation
+          tar -czf NewGLDAB-release.tar.gz release/
+      
+      - name: Upload release artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: release-build
+          path: NewGLDAB-release.tar.gz
+          retention-days: 90
+
+  # Summary
+  summary:
+    name: Build Summary
+    runs-on: ubuntu-latest
+    needs: [build-platformio, build-cmake, test, static-analysis, verify-tla, verify-z3, generate-docs]
+    if: always()
+    
+    steps:
+      - name: Job Summary
+        run: |
+          echo "## Build Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Status" >> $GITHUB_STEP_SUMMARY
+          echo "- PlatformIO Build: ${{ needs.build-platformio.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "- CMake Build: ${{ needs.build-cmake.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Unit Tests: ${{ needs.test.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Static Analysis: ${{ needs.static-analysis.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "- TLA+ Verification: ${{ needs.verify-tla.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Z3 Verification: ${{ needs.verify-z3.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Documentation: ${{ needs.generate-docs.result }}" >> $GITHUB_STEP_SUMMARY

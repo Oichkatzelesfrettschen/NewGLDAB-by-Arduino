@@ -4,6 +4,13 @@
 
 ![250120 New GLDAB by Arduino pro mini 4g](/Image/250120%20New%20GLDAB%20by%20Arduino%20pro%20mini%204g.jpg)
 
+## 🚀 Quick Start
+
+**New to NewGLDAB?** See the [Quick Start Guide](QUICKSTART.md) for modern build system setup!
+
+**Advanced Features:** Check out the [Comprehensive Research Report](docs/research/COMPREHENSIVE_RESEARCH_REPORT.md) for quaternion control, machine learning, and formal verification.
+
+## Overview
 
 New GLDAB is a device that detects the position of the wing with a magnetic sensor and stops the wing movement at the optimal position for gliding.
 
@@ -97,6 +104,50 @@ How New GLDAb by Arduino works
 
 ------If the above acts, GLDAB acts normally.
 
+## 📚 Advanced Documentation
+
+This project now includes comprehensive research and development documentation:
+
+### Core Documentation
+- **[Quick Start Guide](QUICKSTART.md)** - Get started with PlatformIO build system
+- **[Comprehensive Research Report](docs/research/COMPREHENSIVE_RESEARCH_REPORT.md)** - 35,000+ word technical analysis covering:
+  - Mathematical foundations (quaternions, octonions)
+  - Materials science and fluid mechanics
+  - Machine learning and adaptive control
+  - Sensor fusion algorithms
+  - Formal verification with TLA+ and Z3
+  - Complete implementation roadmap
+
+### Technical Guides
+- **[Quaternion Mathematics](docs/mathematics/Quaternion_Mathematics.md)** - Gimbal-lock-free 3D rotation
+- **[Sensor Integration](docs/sensors/Sensor_Integration_Guide.md)** - IMU, pressure, humidity sensors
+- **[ML Algorithms](docs/algorithms/Machine_Learning_Algorithms.md)** - Adaptive flight control
+
+### Formal Verification
+- **[TLA+ Specification](docs/formal-verification/GLDAB_System.tla)** - System behavior verification
+- **[Z3 Constraints](docs/formal-verification/GLDAB_Constraints.smt2)** - Safety property verification
+
+### Build Systems
+- **PlatformIO** - Modern Arduino development (`platformio.ini`)
+- **CMake** - Alternative build system (`CMakeLists.txt`)
+- **CI/CD** - Automated testing and verification (`.github/workflows/`)
+
+## 🛠️ Modern Build System
+
+Build with PlatformIO:
+```bash
+# Install PlatformIO
+pip install platformio
+
+# Build firmware
+pio run -e pro_mini
+
+# Upload to Arduino
+pio run -e pro_mini --target upload
+
+# Run tests
+pio test
+```
 
 ## My YouTube channel 
  Various ServoFlapOrnithopters have been uploaded.
